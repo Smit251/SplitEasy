@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SplitEasy - Expense Sharing</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Google Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    
+</head>
+<body class="overscroll-none bg-gray-50">
+
+    <!-- Main Application Wrapper -->
+    <div id="app" class="max-w-screen-xl mx-auto h-screen flex flex-col">
+        <!-- Header -->
+        <header class="p-4 bg-white sticky top-0 z-40 shadow-sm">
+            <h1 class="text-xl font-bold text-center text-teal-600">SplitEasy</h1>
+            <div id="user-info" class="text-center text-xs text-gray-500 mt-1" style="display: none;">
+                Your User ID (for sharing): <code id="user-id-display" class="bg-gray-100 p-1 rounded-md text-teal-800 font-mono"></code>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content" class="flex-1 overflow-y-auto p-4 pb-24">
+            <!-- Loading indicator -->
+            <div id="loading-spinner" class="text-center p-10">
+                <p>Connecting to database...</p>
+            </div>
+        </main>
+        
+        <!-- Floating Action Button -->
+        <button id="fab-add-expense" class="fab bg-teal-600 hover:bg-teal-700 fixed bottom-24 right-6 w-14 h-14 rounded-full text-white shadow-lg flex items-center justify-center z-40">
+            <span class="material-icons-sharp text-3xl">add</span>
+        </button>
+
+        <!-- Bottom Navigation -->
+        <nav class="fixed bottom-0 left-0 right-0 max-w-screen-xl mx-auto h-20 bg-white border-t border-gray-200 flex justify-around items-center z-40">
+            <button class="nav-item w-1/5 text-center text-gray-500 flex flex-col items-center justify-center gap-1 active" data-page="dashboard">
+                <span class="material-icons-sharp">dashboard</span>
+                <span class="text-xs font-medium">Dashboard</span>
+                <div class="nav-indicator"></div>
+            </button>
+            <button class="nav-item w-1/5 text-center text-gray-500 flex flex-col items-center justify-center gap-1" data-page="friends">
+                <span class="material-icons-sharp">people</span>
+                <span class="text-xs font-medium">Friends</span>
+                <div class="nav-indicator"></div>
+            </button>
+            <button class="nav-item w-1/5 text-center text-gray-500 flex flex-col items-center justify-center gap-1" data-page="groups">
+                <span class="material-icons-sharp">groups</span>
+                <span class="text-xs font-medium">Groups</span>
+                <div class="nav-indicator"></div>
+            </button>
+            <button class="nav-item w-1/5 text-center text-gray-500 flex flex-col items-center justify-center gap-1" data-page="activity">
+                <span class="material-icons-sharp">receipt_long</span>
+                <span class="text-xs font-medium">Activity</span>
+                <div class="nav-indicator"></div>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container" class="modal fixed inset-0 bg-black bg-opacity-50 z-50">
+        <div id="modal-content-wrapper" class="modal-content bg-white shadow-xl flex flex-col">
+           <!-- Modal content will be injected by JavaScript -->
+        </div>
+    </div>
+    
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+
+    <!-- Local Firebase Config (Not in Git) -->
+    <script src="firebase-config.js"></script>
+
+    <!-- Application JavaScript -->
+    <script type="module" src="app.js"></script>
+
+</body>
+</html>
