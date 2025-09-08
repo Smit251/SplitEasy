@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         listenToAllExpenses(callback) {
-            return db.collection('expenses').where('participants', 'array-contains', this.user.uid).orderBy('date', 'desc').onSnapshot(snapshot => {
+            return db.collection('expenses').where('participants', 'array-contains', this.user.uid).orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                 const expenses = snapshot.docs.map(doc => {
                     const data = doc.data();
                     return { 
@@ -76,7 +76,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await batch.commit();
         }
-        async deleteFriend(id) { await db.collection(`users/${this.user.uid}/friends`).doc(id).delete(); }
+        async deleteFriendship(currentUserId, friendId) {
+            const batch = db.batch();
+
+            // Delete friend from current user's list
+            const friendRef = db.collection(`users/${currentUserId}/friends`).doc(friendId);
+            batch.delete(friendRef);
+
+            // Delete current user from friend's list
+            const currentUserRef = db.collection(`users/${friendId}/friends`).doc(currentUserId);
+            batch.delete(currentUserRef);
+
+            await batch.commit();
+        }
         async addGroup(data) { await db.collection('groups').add({ ...data, members: [this.user.uid, ...data.members], createdBy: this.user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateGroup(id, data) { await db.collection('groups').doc(id).update(data); }
         async updateUserProfile(name) { await this.user.updateProfile({ displayName: name }); await db.collection('users').doc(this.user.uid).update({ name }); }
@@ -345,6 +357,11 @@ document.addEventListener('DOMContentLoaded', () => {
             this.modalContainer = document.getElementById('modal-container');
             this.modalContentWrapper = document.getElementById('modal-content-wrapper');
             this.charts = {};
+            this.categoryIcons = {
+                Food: 'restaurant', Transport: 'commute', Housing: 'home',
+                Utilities: 'lightbulb', Travel: 'flight_takeoff', Entertainment: 'theaters',
+                Other: 'receipt_long'
+            };
         }
         
         renderPage(page) {
@@ -540,59 +557,134 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderActivityPage() {
-            const expenses = this.app.state.expenses;
+            const expenses = this.app.state.expenses; // Already sorted by createdAt desc
             const allUsers = [this.app.state.user, ...this.app.state.friends];
-            const findName = (id) => allUsers.find(u => u.id === id)?.name || 'Unknown';
+            const findUser = (id) => allUsers.find(u => u.id === id);
+
+            const groupedExpenses = this.groupExpensesByDate(expenses);
 
             this.mainContent.innerHTML = `
-                <div class="space-y-4">
+                <div class="space-y-6">
                     <div class="flex justify-between items-center">
                         <h2 class="text-2xl font-bold">All Activity</h2>
                     </div>
-                    <div id="activity-list" class="space-y-3">
+                    <div id="activity-list" class="space-y-8">
                         ${expenses.length === 0 ? '<p class="text-gray-500 text-center p-4">No activity yet.</p>' : ''}
-                        ${[...expenses].sort((a, b) => new Date(b.date) - new Date(a.date)).map(expense => {
-                            if (expense.isPayment) {
-                                const payerName = findName(expense.paidById);
-                                const receiverName = findName(expense.receiverId);
-                                const description = payerName === 'You' 
-                                    ? `You paid ${receiverName}` 
-                                    : `${payerName} paid you`;
-                                return `
-                                    <div class="bg-white p-4 rounded-lg shadow">
-                                        <div class="flex justify-between items-start">
-                                            <div>
-                                                <p class="font-semibold text-green-700">Payment</p>
-                                                <p class="text-lg font-bold text-green-600">$${expense.amount.toFixed(2)}</p>
-                                                <p class="text-sm text-gray-500">${description} on ${expense.date}</p>
-                                            </div>
-                                            <div class="flex gap-1">
-                                                <button class="delete-expense-btn p-2 text-gray-500 hover:text-red-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">delete</span></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            } else {
-                                return `
-                                    <div class="bg-white p-4 rounded-lg shadow">
-                                        <div class="flex justify-between items-start">
-                                            <div>
-                                                <p class="font-semibold">${expense.description}</p>
-                                                <p class="text-xl font-bold text-gray-800">$${expense.amount.toFixed(2)}</p>
-                                                <p class="text-sm text-gray-500">Paid by ${findName(expense.paidById)} on ${expense.date}</p>
-                                            </div>
-                                            <div class="flex gap-1">
-                                                <button class="edit-expense-btn p-2 text-gray-500 hover:text-teal-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">edit</span></button>
-                                                <button class="delete-expense-btn p-2 text-gray-500 hover:text-red-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">delete</span></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            }
+                        ${[...groupedExpenses.entries()].map(([dateLabel, expensesOnDate]) => `
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider pb-2 mb-3 border-b">${dateLabel}</h3>
+                                <div class="space-y-3">
+                                    ${expensesOnDate.map(expense => this.renderActivityItem(expense, findUser)).join('')}
+                                </div>
+                            </div>
                         }).join('')}
                     </div>
                 </div>
             `;
+        }
+
+        groupExpensesByDate(expenses) {
+            const grouped = new Map();
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            const todayStr = today.toISOString().split('T')[0];
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+            for (const expense of expenses) {
+                let dateLabel;
+                if (expense.date === todayStr) {
+                    dateLabel = 'Today';
+                } else if (expense.date === yesterdayStr) {
+                    dateLabel = 'Yesterday';
+                } else {
+                    const [year, month, day] = expense.date.split('-').map(Number);
+                    const d = new Date(year, month - 1, day);
+                    dateLabel = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+                    if (d.getFullYear() !== today.getFullYear()) {
+                        dateLabel += `, ${d.getFullYear()}`;
+                    }
+                }
+                
+                if (!grouped.has(dateLabel)) {
+                    grouped.set(dateLabel, []);
+                }
+                grouped.get(dateLabel).push(expense);
+            }
+            return grouped;
+        }
+
+        renderActivityItem(expense, findUser) {
+            if (expense.isPayment) {
+                const payer = findUser(expense.paidById);
+                const receiver = findUser(expense.receiverId);
+                if (!payer || !receiver) return '';
+
+                const description = payer.id === this.app.user.uid
+                    ? `You paid ${receiver.name}`
+                    : `${payer.name} paid you`;
+
+                return `
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                                <span class="material-icons-sharp text-green-600">paid</span>
+                            </div>
+                            <div class="flex-grow">
+                                <p class="font-semibold">${description}</p>
+                                <p class="text-sm text-gray-500">Payment</p>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <p class="font-bold text-green-600">$${expense.amount.toFixed(2)}</p>
+                            </div>
+                            <div class="flex items-center -mr-2">
+                                <button class="delete-expense-btn p-2 text-gray-400 hover:text-red-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">delete</span></button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const payer = findUser(expense.paidById);
+                if (!payer) return '';
+
+                const userSplit = expense.splits.find(s => s.friendId === this.app.user.uid);
+                let userShareText = '';
+                let userShareColor = 'text-gray-700';
+
+                if (payer.id === this.app.user.uid) {
+                    const lentAmount = expense.amount - (userSplit?.amount || 0);
+                    if (lentAmount > 0.005) { // Avoid showing $0.00
+                        userShareText = `You lent $${lentAmount.toFixed(2)}`;
+                        userShareColor = 'text-green-600';
+                    }
+                } else if (userSplit) {
+                    userShareText = `You borrowed $${userSplit.amount.toFixed(2)}`;
+                    userShareColor = 'text-red-600';
+                }
+
+                return `
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                                <span class="material-icons-sharp text-gray-600">${this.categoryIcons[expense.category] || 'receipt_long'}</span>
+                            </div>
+                            <div class="flex-grow">
+                                <p class="font-semibold">${expense.description}</p>
+                                <p class="text-sm text-gray-500">Paid by ${payer.name}</p>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <p class="font-bold text-gray-800">$${expense.amount.toFixed(2)}</p>
+                                ${userShareText ? `<p class="text-xs font-medium ${userShareColor}">${userShareText}</p>` : ''}
+                            </div>
+                            <div class="flex items-center -mr-2">
+                                <button class="edit-expense-btn p-2 text-gray-400 hover:text-teal-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">edit</span></button>
+                                <button class="delete-expense-btn p-2 text-gray-400 hover:text-red-600 rounded-full" data-expense-id="${expense.id}"><span class="material-icons-sharp text-xl">delete</span></button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
         }
 
         renderGroupDetailPage(group) {
@@ -651,41 +743,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderRecentActivity() {
-            const recentExpenses = [...this.app.state.expenses]
-                .sort((a, b) => new Date(b.date) - new Date(a.date))
-                .slice(0, 5);
+            const recentExpenses = this.app.state.expenses.slice(0, 5);
             
             if (recentExpenses.length === 0) {
                 return '<p class="text-gray-500 text-center p-2">No recent activity.</p>';
             }
 
             const allUsers = [this.app.state.user, ...this.app.state.friends];
-            const findName = (id) => allUsers.find(u => u.id === id)?.name || 'Unknown';
+            const findUser = (id) => allUsers.find(u => u.id === id);
 
             return recentExpenses.map(expense => {
                 if (expense.isPayment) {
-                    const payerName = findName(expense.paidById);
-                    const receiverName = findName(expense.receiverId);
-                    const description = payerName === 'You' 
-                        ? `You paid ${receiverName}` 
-                        : `${payerName} paid you`;
+                    const payer = findUser(expense.paidById);
+                    const receiver = findUser(expense.receiverId);
+                    if (!payer || !receiver) return '';
+
+                    const description = payer.id === this.app.user.uid
+                        ? `You paid ${receiver.name}`
+                        : `${payer.name} paid you`;
                     return `
-                        <div class="flex justify-between items-center py-1">
-                            <div>
-                                <p class="font-semibold text-green-600">${description}</p>
-                                <p class="text-sm text-gray-500">${expense.date}</p>
+                        <div class="flex justify-between items-center py-2">
+                            <div class="flex items-center gap-3">
+                                <span class="material-icons-sharp text-green-600">paid</span>
+                                <div>
+                                    <p class="font-semibold">${description}</p>
+                                    <p class="text-sm text-gray-500">${expense.date}</p>
+                                </div>
                             </div>
                             <p class="font-bold text-green-600">$${expense.amount.toFixed(2)}</p>
                         </div>
                     `;
                 } else {
+                    const payer = findUser(expense.paidById);
+                    if (!payer) return '';
+
+                    const userSplit = expense.splits.find(s => s.friendId === this.app.user.uid);
+                    let userShareText = '';
+                    let userShareColor = 'text-gray-700';
+
+                    if (payer.id === this.app.user.uid) {
+                        // No text needed if you paid, it's implied
+                    } else if (userSplit) {
+                        userShareText = `You owe $${userSplit.amount.toFixed(2)}`;
+                        userShareColor = 'text-red-600';
+                    }
+
                     return `
-                        <div class="flex justify-between items-center py-1">
-                            <div>
-                                <p class="font-semibold">${expense.description}</p>
-                                <p class="text-sm text-gray-500">Paid by ${findName(expense.paidById)}</p>
+                        <div class="flex justify-between items-center py-2">
+                            <div class="flex items-center gap-3">
+                                <span class="material-icons-sharp text-gray-500">${this.categoryIcons[expense.category] || 'receipt_long'}</span>
+                                <div>
+                                    <p class="font-semibold">${expense.description}</p>
+                                    <p class="text-sm text-gray-500">Paid by ${payer.name}</p>
+                                </div>
                             </div>
-                            <p class="font-bold text-gray-800">$${expense.amount.toFixed(2)}</p>
+                            <div class="text-right">
+                                <p class="font-bold text-gray-800">$${expense.amount.toFixed(2)}</p>
+                                ${userShareText ? `<p class="text-xs font-medium ${userShareColor}">${userShareText}</p>` : ''}
+                            </div>
                         </div>
                     `;
                 }
@@ -1006,15 +1121,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!friend) return;
 
             this.ui.showConfirmModal({
-                title: `Delete ${friend.name}?`,
-                message: 'This action cannot be undone. Are you sure you want to delete this friend?'
+                title: `Remove ${friend.name}?`,
+                message: 'This will remove the friend from both your and their friends list. This action cannot be undone.'
             }, async () => {
                 try {
-                    await this.firebaseService.deleteFriend(friendId);
-                    this.ui.showToast('Friend deleted successfully!', 'success');
+                    await this.firebaseService.deleteFriendship(this.user.uid, friendId);
+                    this.ui.showToast('Friend removed successfully!', 'success');
                 } catch (error) {
-                    console.error("Error deleting friend:", error);
-                    this.ui.showToast('Failed to delete friend.', 'error');
+                    console.error("Error removing friend:", error);
+                    this.ui.showToast('Failed to remove friend.', 'error');
                 }
             });
         }
