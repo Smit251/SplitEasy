@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return { id: userDoc.id, ...userDoc.data() };
         }
 
-        async addFriend(friendData) { await db.collection(`users/${this.user.uid}/friends`).doc(friendData.uid).set(friendData); }
+        async addFriend(friendId, friendData) { await db.collection(`users/${this.user.uid}/friends`).doc(friendId).set(friendData); }
         async deleteFriend(id) { await db.collection(`users/${this.user.uid}/friends`).doc(id).delete(); }
         async addGroup(data) { await db.collection('groups').add({ ...data, members: [this.user.uid, ...data.members], createdBy: this.user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateGroup(id, data) { await db.collection('groups').doc(id).update(data); }
@@ -973,13 +973,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const friendData = {
-                    uid: friendUser.id,
                     name: friendUser.name,
                     email: friendUser.email,
                     photoURL: friendUser.photoURL || null
                 };
 
-                await this.firebaseService.addFriend(friendData);
+                await this.firebaseService.addFriend(friendUser.id, friendData);
                 this.ui.showToast('Friend added successfully!', 'success');
                 this.ui.closeModal();
             } catch (error) {
