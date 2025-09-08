@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         async deleteFriend(id) { await db.collection(`users/${this.user.uid}/friends`).doc(id).delete(); }
         async addGroup(data) { await db.collection('groups').add({ ...data, members: [this.user.uid, ...data.members], createdBy: this.user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateGroup(id, data) { await db.collection('groups').doc(id).update(data); }
+        async updateUserProfile(name) { await this.user.updateProfile({ displayName: name }); await db.collection('users').doc(this.user.uid).update({ name }); }
         async deleteGroup(id) { await db.collection('groups').doc(id).delete(); }
         async addExpense(data) { await db.collection('expenses').add({ ...data, date: new Date(data.date), createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateExpense(id, data) { await db.collection('expenses').doc(id).update({ ...data, date: new Date(data.date) }); }
@@ -340,6 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'friends': this.renderFriendsPage(); break;
                 case 'groups': this.renderGroupsPage(); break;
                 case 'activity': this.renderActivityPage(); break;
+                case 'settings': this.renderSettingsPage(); break;
             }
         }
 
@@ -603,6 +605,34 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        renderSettingsPage() {
+            const user = this.app.state.user;
+            this.mainContent.innerHTML = `
+                <div class="space-y-6 max-w-2xl mx-auto">
+                    <h2 class="text-2xl font-bold">Settings</h2>
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <form id="settings-form" class="space-y-6">
+                            <div class="flex items-center gap-4">
+                                <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.name}&background=random`}" alt="avatar" class="w-16 h-16 rounded-full">
+                                <div>
+                                    <p class="font-bold text-xl">${user.name}</p>
+                                    <p class="text-sm text-gray-500">${user.email}</p>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="userName" class="block text-sm font-medium text-gray-700">Display Name</label>
+                                <input type="text" id="userName" name="userName" value="${user.name}" class="form-input w-full mt-1 p-2 rounded-md" required>
+                            </div>
+                            <div class="text-right">
+                                <button type="submit" class="bg-teal-600 text-white px-6 py-2 rounded-lg shadow-sm hover:bg-teal-700 font-semibold">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+        }
+
         renderRecentActivity() {
             const recentExpenses = [...this.app.state.expenses]
                 .sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -686,6 +716,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.classList.toggle('active', item.dataset.page === page);
             });
         }
+
+        updateUserInfoHeader(user) {
+            const userInfoEl = document.getElementById('user-info');
+            if (userInfoEl) {
+                userInfoEl.innerHTML = `
+                    <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.name}&background=random`}" alt="avatar" class="w-8 h-8 rounded-full">
+                    <span class="font-semibold hidden md:inline">${user.name || 'User'}</span>
+                `;
+            }
+        }
     }
 
 
@@ -701,7 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.currentGroup = null;
             
             this.state = {
-                user: { id: user.uid, name: user.displayName || 'You', photoURL: user.photoURL },
+                user: { id: user.uid, name: user.displayName || 'You', photoURL: user.photoURL, email: user.email },
                 friends: [],
                 groups: [],
                 expenses: [],
@@ -711,18 +751,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         async init() {
-            const userInfoEl = document.getElementById('user-info');
-            if (userInfoEl) {
-                userInfoEl.innerHTML = `
-                    <img src="${this.user.photoURL || `https://ui-avatars.com/api/?name=${this.user.displayName}&background=random`}" alt="avatar" class="w-8 h-8 rounded-full">
-                    <span class="font-semibold hidden md:inline">${this.user.displayName || 'User'}</span>
-                `;
-            }
+            this.ui.updateUserInfoHeader(this.state.user);
             await this.firebaseService.initUser();
             this.attachDataListeners();
             this.addEventListeners();
+            this.refreshUI();
         }
-        
+
         attachDataListeners() {
             this.unsubscribers.push(this.firebaseService.listenToFriends(friends => { this.state.friends = friends; this.refreshUI(); }));
             this.unsubscribers.push(this.firebaseService.listenToGroups(groups => { this.state.groups = groups; this.refreshUI(); }));
@@ -830,6 +865,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         this.handleAddGroup(e.target);
                     }
+                } else if (e.target.id === 'settings-form') {
+                    this.handleUpdateProfile(e.target);
                 }
             });
 
@@ -1059,6 +1096,26 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 console.error("Error updating group:", error);
                 this.ui.showToast('Failed to update group.', 'error');
+            }
+        }
+
+        async handleUpdateProfile(form) {
+            const formData = new FormData(form);
+            const newName = formData.get('userName').trim();
+
+            if (!newName) {
+                this.ui.showToast('Name cannot be empty.', 'error');
+                return;
+            }
+
+            try {
+                await this.firebaseService.updateUserProfile(newName);
+                this.state.user.name = newName;
+                this.ui.updateUserInfoHeader(this.state.user);
+                this.ui.showToast('Profile updated successfully!', 'success');
+            } catch (error) {
+                console.error("Error updating profile:", error);
+                this.ui.showToast('Failed to update profile.', 'error');
             }
         }
 
