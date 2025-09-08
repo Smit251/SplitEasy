@@ -55,7 +55,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return { id: userDoc.id, ...userDoc.data() };
         }
 
-        async addFriend(friendId, friendData) { await db.collection(`users/${this.user.uid}/friends`).doc(friendId).set(friendData); }
+        async createFriendship(friendUser, currentUser) {
+            const batch = db.batch();
+
+            // Add friend to current user's friend list
+            const friendRef = db.collection(`users/${currentUser.id}/friends`).doc(friendUser.id);
+            batch.set(friendRef, {
+                name: friendUser.name,
+                email: friendUser.email,
+                photoURL: friendUser.photoURL || null
+            });
+
+            // Add current user to friend's friend list
+            const currentUserRef = db.collection(`users/${friendUser.id}/friends`).doc(currentUser.id);
+            batch.set(currentUserRef, {
+                name: currentUser.name,
+                email: currentUser.email,
+                photoURL: currentUser.photoURL || null
+            });
+
+            await batch.commit();
+        }
         async deleteFriend(id) { await db.collection(`users/${this.user.uid}/friends`).doc(id).delete(); }
         async addGroup(data) { await db.collection('groups').add({ ...data, members: [this.user.uid, ...data.members], createdBy: this.user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateGroup(id, data) { await db.collection('groups').doc(id).update(data); }
@@ -972,13 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                const friendData = {
-                    name: friendUser.name,
-                    email: friendUser.email,
-                    photoURL: friendUser.photoURL || null
-                };
-
-                await this.firebaseService.addFriend(friendUser.id, friendData);
+                await this.firebaseService.createFriendship(friendUser, this.state.user);
                 this.ui.showToast('Friend added successfully!', 'success');
                 this.ui.closeModal();
             } catch (error) {
