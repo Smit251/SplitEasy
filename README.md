@@ -48,25 +48,9 @@ To get a local copy up and running, follow these simple steps.
     - In your new project, go to the **Authentication** section, click the **Sign-in method** tab, and enable **Anonymous** authentication.
     - Go to the **Firestore Database** section and create a database. Start in **Test mode** for easy setup; you can secure it with rules later.
 
-3.  **Create your Firebase config file:**
-    - In the root of the project directory, create a new file named `firebase-config.js`.
+3.  **Update the Firebase config:**
     - In your Firebase project settings (click the gear icon ⚙️ > Project settings), find your web app's configuration object.
-    - Copy this object into your `firebase-config.js` file. It should look like this:
-
-    ```javascript
-    // firebase-config.js
-    // This file is ignored by Git and will not be committed.
-
-    const firebaseConfig = {
-      apiKey: "AIza...",
-      authDomain: "your-project-id.firebaseapp.com",
-      projectId: "your-project-id",
-      storageBucket: "your-project-id.appspot.com",
-      messagingSenderId: "1234567890",
-      appId: "1:1234567890:web:abcdef123456",
-      measurementId: "G-ABCDEFGHIJ"
-    };
-    ```
+    - Open the `firebase-config.js` file in this project and replace the placeholder values with your actual Firebase project configuration.
 
 4.  **Run the application:**
     - Simply open the `index.html` file in your web browser. Because this project uses ES6 modules, you may need to serve it from a local server. A simple way to do this is with the Live Server extension for VS Code.
@@ -78,7 +62,7 @@ To get a local copy up and running, follow these simple steps.
 ├── index.html          # Main HTML file, the entry point of the app
 ├── style.css           # Custom CSS styles
 ├── app.js              # Core application logic (ES6 Module)
-├── firebase-config.js  # Your private Firebase keys (ignored by Git)
+├── firebase-config.js  # Your Firebase project configuration
 ├── firebase.json       # Firebase hosting configuration
 └── .gitignore          # Specifies files for Git to ignore
 ```
