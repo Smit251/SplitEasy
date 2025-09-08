@@ -46,7 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }, error => console.error("Expense listener failed:", error));
         }
 
-        async addFriend(data) { await db.collection(`users/${this.user.uid}/friends`).add(data); }
+        async findUserByEmail(email) {
+            const querySnapshot = await db.collection('users').where('email', '==', email).limit(1).get();
+            if (querySnapshot.empty) {
+                return null;
+            }
+            const userDoc = querySnapshot.docs[0];
+            return { id: userDoc.id, ...userDoc.data() };
+        }
+
+        async addFriend(friendData) { await db.collection(`users/${this.user.uid}/friends`).doc(friendData.uid).set(friendData); }
         async deleteFriend(id) { await db.collection(`users/${this.user.uid}/friends`).doc(id).delete(); }
         async addGroup(data) { await db.collection('groups').add({ ...data, members: [this.user.uid, ...data.members], createdBy: this.user.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
         async updateGroup(id, data) { await db.collection('groups').doc(id).update(data); }
@@ -112,36 +121,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- FORM TEMPLATES CLASS --- //
     class FormTemplates {
         static addFriend() {
-            const defaultAvatars = ['😀', '😎', '🧑‍💻', '🎨', '🎉', '🚀', '💡', '🤖', '😊', '🥳', '🤩', '🤔'];
-            const defaultAvatar = defaultAvatars[0];
-
             return `
                 <form id="add-friend-form" class="flex flex-col flex-1 overflow-hidden">
                     <div class="p-4 border-b">
-                        <h3 class="text-lg font-bold text-center">Add a Friend</h3>
+                        <h3 class="text-lg font-bold text-center">Add a Friend by Email</h3>
                     </div>
                     <div class="p-6 space-y-6 flex-1 overflow-y-auto">
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Name</label>
-                                <input type="text" name="name" class="form-input w-full mt-1 p-2 rounded-md" required autocomplete="off">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Avatar</label>
-                                <input type="hidden" name="avatar" id="selected-avatar" value="${defaultAvatar}">
-                                <div id="avatar-picker" class="mt-2 grid grid-cols-6 gap-2">
-                                    ${defaultAvatars.map((avatar, index) => `
-                                        <div class="avatar-option cursor-pointer text-3xl text-center p-2 rounded-lg border-2 ${index === 0 ? 'border-teal-500 ring-2 ring-teal-200' : 'border-transparent'} hover:bg-gray-100" data-avatar="${avatar}">
-                                            ${avatar}
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
+                        <p class="text-sm text-gray-600">Enter the email address of the friend you want to add. They must have a SplitEasy account.</p>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Friend's Email</label>
+                            <input type="email" name="email" class="form-input w-full mt-1 p-2 rounded-md" required autocomplete="off" placeholder="friend@example.com">
                         </div>
                     </div>
                     <div class="p-4 bg-gray-50 border-t flex justify-end gap-2">
                         <button type="button" class="modal-close-btn px-4 py-2 rounded-md text-gray-700 bg-gray-200 hover:bg-gray-300 font-semibold">Cancel</button>
-                        <button type="submit" class="px-4 py-2 rounded-md bg-teal-600 hover:bg-teal-700 text-white font-semibold">Add Friend</button>
+                        <button type="submit" class="px-4 py-2 rounded-md bg-teal-600 hover:bg-teal-700 text-white font-semibold">Find & Add Friend</button>
                     </div>
                 </form>
             `;
@@ -385,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return `
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-3">
-                                            <span class="text-3xl">${friend.avatar}</span>
+                                            <img src="${friend.photoURL || `https://ui-avatars.com/api/?name=${friend.name}&background=random`}" alt="${friend.name}" class="w-10 h-10 rounded-full">
                                             <div>
                                                 <p class="font-semibold">${friend.name}</p>
                                                 <p class="text-sm font-medium ${owesYou ? 'text-green-600' : 'text-red-600'}">
@@ -483,9 +477,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="friends-list" class="space-y-2">
                         ${this.app.state.friends.map(friend => `
                             <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow">
-                                <div class="flex items-center gap-4">
-                                    <span class="text-3xl">${friend.avatar}</span>
-                                    <span>${friend.name}</span>
+                                <div class="flex items-center gap-3">
+                                    <img src="${friend.photoURL || `https://ui-avatars.com/api/?name=${friend.name}&background=random`}" alt="${friend.name}" class="w-10 h-10 rounded-full">
+                                    <div>
+                                        <p class="font-semibold">${friend.name}</p>
+                                        <p class="text-xs text-gray-500">${friend.email}</p>
+                                    </div>
                                 </div>
                                 <button data-friend-id="${friend.id}" class="delete-friend-btn p-2 text-gray-500 hover:text-red-600 rounded-full"><span class="material-icons-sharp text-xl">delete</span></button>
                             </div>
@@ -949,12 +946,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         async handleAddFriend(form) {
             const formData = new FormData(form);
-            const friendData = {
-                name: formData.get('name'),
-                avatar: formData.get('avatar'),
-            };
+            const email = formData.get('email').trim().toLowerCase();
+
+            if (!email) {
+                this.ui.showToast("Please enter an email address.", 'error');
+                return;
+            }
+
+            if (email === this.user.email) {
+                this.ui.showToast("You can't add yourself as a friend.", 'error');
+                return;
+            }
+
+            // Check if friend already exists by email
+            if (this.state.friends.some(f => f.email === email)) {
+                this.ui.showToast('This person is already in your friends list.', 'error');
+                return;
+            }
 
             try {
+                const friendUser = await this.firebaseService.findUserByEmail(email);
+
+                if (!friendUser) {
+                    this.ui.showToast('User not found. Please make sure your friend has signed up for SplitEasy.', 'error');
+                    return;
+                }
+
+                const friendData = {
+                    uid: friendUser.id,
+                    name: friendUser.name,
+                    email: friendUser.email,
+                    photoURL: friendUser.photoURL || null
+                };
+
                 await this.firebaseService.addFriend(friendData);
                 this.ui.showToast('Friend added successfully!', 'success');
                 this.ui.closeModal();
