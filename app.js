@@ -16,9 +16,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const userDocRef = db.collection('users').doc(this.user.uid);
             const userDoc = await userDocRef.get();
             if (!userDoc.exists) {
-                // For a real application, you'd likely just create the user document
-                // without adding default friends. This is commented out but kept for demo purposes.
-                await userDocRef.set({ name: 'You', createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+                await userDocRef.set({
+                    name: this.user.displayName || 'New User',
+                    email: this.user.email,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
             }
         }
 
@@ -699,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.currentGroup = null;
             
             this.state = {
-                user: { id: user.uid, name: 'You'},
+                user: { id: user.uid, name: user.displayName || 'You', photoURL: user.photoURL },
                 friends: [],
                 groups: [],
                 expenses: [],
@@ -709,11 +711,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         async init() {
-            const userInfo = document.getElementById('user-info');
-            const userIdDisplay = document.getElementById('user-id-display');
-            if (userInfo) userInfo.style.display = 'block';
-            if (userIdDisplay) userIdDisplay.textContent = this.user.uid;
-            
+            const userInfoEl = document.getElementById('user-info');
+            if (userInfoEl) {
+                userInfoEl.innerHTML = `
+                    <img src="${this.user.photoURL || `https://ui-avatars.com/api/?name=${this.user.displayName}&background=random`}" alt="avatar" class="w-8 h-8 rounded-full">
+                    <span class="font-semibold hidden md:inline">${this.user.displayName || 'User'}</span>
+                `;
+            }
             await this.firebaseService.initUser();
             this.attachDataListeners();
             this.addEventListeners();
@@ -753,6 +757,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             document.body.addEventListener('click', e => {
+                const logoutBtn = e.target.closest('#logout-btn');
+                if (logoutBtn) {
+                    auth.signOut();
+                }
                 if (e.target.closest('.modal-close-btn') || e.target.id === 'modal-container') this.ui.closeModal();
                 if (e.target.id === 'add-friend-btn') {
                     this.ui.openModal(FormTemplates.addFriend());
@@ -1392,19 +1400,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- Authentication Flow --- //
+    const authScreen = document.getElementById('auth-screen');
+    const appWrapper = document.getElementById('app');
+    const googleSignInBtn = document.getElementById('google-signin-btn');
+    const loadingSpinner = document.getElementById('loading-spinner');
+
     auth.onAuthStateChanged(user => {
         if (user) {
             // console.log('Authenticated user:', user.uid);
+            // User is signed in.
+            authScreen.style.display = 'none';
+            appWrapper.style.display = 'flex';
+            loadingSpinner.style.display = 'block';
             window.currentApp = new App(user);
         } else {
-            // console.log('No user found, signing in anonymously...');
-            auth.signInAnonymously().catch(error => {
-                console.error("Anonymous sign-in failed:", error);
-                const mainContent = document.getElementById('main-content');
-                if(mainContent) mainContent.innerHTML = `<p class="text-red-500 text-center p-4">Authentication failed. This can happen if the Firebase project is not set up correctly or due to network issues.</p>`;
-                const spinner = document.getElementById('loading-spinner');
-                if (spinner) spinner.style.display = 'none';
-            });
+            // User is signed out.
+            authScreen.style.display = 'flex';
+            appWrapper.style.display = 'none';
+            // Clean up listeners from the previous user's session
+            if (window.currentApp) {
+                window.currentApp.unsubscribers.forEach(unsub => unsub());
+                window.currentApp = null;
+            }
         }
     });
+
+    if (googleSignInBtn) {
+        googleSignInBtn.addEventListener('click', () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch(error => {
+                console.error("Google sign-in failed:", error);
+                alert("Sign-in failed. Please try again. Check the console for more details.");
+            });
+        });
+    }
 });

@@ -1,2 +1,5 @@
+# Firebase config file
+firebase-config.js
+
 # Node modules
 /node_modules
